@@ -1,0 +1,32 @@
+{
+  "name": "tabagent",
+  "description": "用自然语言指挥 AI 操作网页：点击、填写、提取、跨标签页汇总。",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "dev:edge": "wxt -b edge",
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "build:edge": "wxt build -b edge",
+    "build:all": "wxt build && wxt build -b edge && wxt build -b firefox",
+    "build:safari": "wxt build -b safari --mv3",
+    "zip": "wxt zip",
+    "zip:firefox": "wxt zip -b firefox",
+    "zip:edge": "wxt zip -b edge",
+    "zip:all": "wxt zip && wxt zip -b edge && wxt zip -b firefox",
+    "compile": "tsc --noEmit",
+    "postinstall": "wxt prepare",
+    "test:e2e": "wxt build && node tests/e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1",
+    "typescript": "^5.9.3",
+    "wxt": "^0.21.4"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0"
+  }
+}
