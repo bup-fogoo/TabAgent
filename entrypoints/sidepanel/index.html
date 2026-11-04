@@ -3,34 +3,103 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f7f8f6" />
     <title>TabAgent</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/icon/32.png" />
     <meta name="manifest.open_at_install" content="false" />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <header>
-      <div class="brand"><img src="/icon/32.png" alt="" /> TabAgent</div>
-      <div class="actions">
-        <button id="new-chat" title="新对话">新对话</button>
-        <button id="open-options" title="设置">设置</button>
+    <header class="app-header">
+      <div class="brand">
+        <img class="brand-mark" src="/icon.svg" width="30" height="30" alt="" aria-hidden="true" />
+        <span class="brand-name">TabAgent<span class="brand-dot">.</span></span>
       </div>
+      <nav class="actions" aria-label="对话操作">
+        <button id="open-export" class="icon-button" title="导出当前会话" aria-label="导出当前会话" disabled><span data-icon="download"></span></button>
+        <button id="open-history" class="icon-button" title="历史会话" aria-label="打开历史会话"><span data-icon="history"></span></button>
+        <button id="new-chat" class="icon-button" title="新对话" aria-label="新对话"><span data-icon="plus"></span></button>
+        <button id="open-options" class="icon-button" title="设置" aria-label="打开设置"><span data-icon="settings"></span></button>
+      </nav>
     </header>
-    <main id="log">
-      <section id="empty">
-        <h2>想让我在网页上做什么？</h2>
-        <p>我会读取当前标签页，替你点击、填写、提取，也能把多个标签页的信息汇总到一起。</p>
-        <div id="examples">
-          <button>总结这个页面的要点</button>
-          <button>把这个页面上的表格整理成 Markdown</button>
-          <button>对比我打开的所有商品页面的价格和参数</button>
-          <button>帮我把这个表单按以下信息填好：</button>
-        </div>
+    <div class="context-controls">
+      <button id="context-picker" class="context-bar" type="button" title="选择任务可以访问的页面" aria-label="选择任务范围" aria-haspopup="dialog">
+        <span class="context-icon" aria-hidden="true"><span data-icon="page"></span></span>
+        <span class="context-text"><span class="context-caption"><span id="context-label" class="eyebrow">当前页面</span><span id="page-state" class="context-badge" hidden></span></span><span id="page-title">正在获取标签页…</span></span>
+        <span class="context-chevron" data-icon="chevron-down"></span>
+      </button>
+      <div class="context-actions" role="group" aria-label="页面浏览方式">
+        <button id="follow-pages" class="follow-pages" type="button" aria-label="跟随任务页面" aria-pressed="true" title="自动显示正在处理的页面" disabled><span data-icon="eye"></span><span>跟随</span></button>
+        <button id="keep-page" class="keep-page" type="button" title="保留此页面，任务完成后不自动关闭" hidden><span data-icon="bookmark"></span><span>保留</span></button>
+      </div>
+    </div>
+    <section id="setup-banner" class="notice" hidden aria-label="模型配置提示">
+      <strong>连接模型后即可开始</strong>
+      <button id="setup-options" class="text-button">去设置 <span data-icon="arrow-up-right"></span></button>
+    </section>
+    <div id="connection-banner" class="connection-banner" role="status" hidden>正在重新连接…</div>
+    <div class="conversation">
+      <main id="log" aria-label="对话记录" tabindex="0">
+        <section id="empty">
+          <h1>需要处理什么？</h1>
+          <div id="examples">
+            <button data-mode="read-only" data-prompt="总结这个页面的要点"><span class="example-icon" aria-hidden="true"><span data-icon="document"></span></span><strong>总结页面</strong></button>
+            <button data-mode="read-only" data-prompt="把这个页面上的表格整理成 Markdown"><span class="example-icon" aria-hidden="true"><span data-icon="table"></span></span><strong>提取表格</strong></button>
+            <button data-mode="read-only" data-scope="selected" data-prompt="对比我选择的商品页面的价格和参数"><span class="example-icon" aria-hidden="true"><span data-icon="compare"></span></span><strong>对比页面</strong></button>
+            <button data-mode="confirm" data-prompt="帮我把这个表单按以下信息填好："><span class="example-icon" aria-hidden="true"><span data-icon="edit"></span></span><strong>填写表单</strong></button>
+          </div>
+        </section>
+      </main>
+      <button id="scroll-latest" class="scroll-latest" hidden><span data-icon="arrow-down"></span><span>回到最新消息</span></button>
+    </div>
+    <footer class="composer-area">
+      <section id="approval-card" class="approval-card" aria-labelledby="approval-heading" hidden>
+        <div class="approval-heading"><strong id="approval-heading">确认操作</strong></div>
+        <p id="approval-description"></p>
+        <div class="approval-page"><strong id="approval-title"></strong><span id="approval-url"></span></div>
+        <details><summary><span>查看操作参数</span><span data-icon="chevron-down" class="disclosure-icon"></span></summary><pre id="approval-input"></pre></details>
+        <div class="approval-actions"><button id="reject-action" class="secondary-button"><span data-icon="close"></span><span>拒绝</span></button><button id="approve-action" class="primary-button"><span data-icon="check"></span><span>确认执行</span></button></div>
       </section>
-    </main>
-    <footer>
-      <textarea id="input" rows="3" placeholder="输入指令，Enter 发送，Shift+Enter 换行"></textarea>
-      <button id="send">发送</button>
+      <div class="task-status" hidden><span id="status-dot" class="status-dot"></span><span id="task-status" role="status" aria-live="polite"></span><span id="elapsed"></span></div>
+      <div class="composer">
+        <div id="draft-conflict" class="draft-conflict" role="status" hidden><strong>有两个草稿版本</strong><details><summary><span>查看另一版本</span><span data-icon="chevron-down" class="disclosure-icon"></span></summary><p id="draft-remote"></p></details><div><button id="draft-keep-local" type="button">保留当前</button><button id="draft-use-remote" type="button">使用另一版本</button></div></div>
+        <label class="sr-only" for="input">任务指令</label>
+        <textarea id="input" rows="1" placeholder="输入任务或搜索内容…" aria-describedby="input-hint"></textarea>
+        <div class="composer-toolbar">
+          <div class="composer-options">
+            <label class="mode-control"><span class="sr-only">任务模式</span><select id="task-mode" title="只读可搜索网页、读取结果和提取内容；页面操作需确认"><option value="read-only">只读</option><option value="confirm">操作确认</option></select><span data-icon="chevron-down"></span></label>
+            <button id="model-settings" class="model-button" title="打开模型设置"><span data-icon="cpu" class="model-icon"></span><span id="model-name">连接模型</span><span data-icon="chevron-down" class="model-chevron"></span></button>
+          </div>
+          <button id="send" disabled aria-label="发送指令" title="发送指令"><span id="send-label" class="sr-only">发送</span><span id="send-icon" data-icon="arrow-up"></span></button>
+        </div>
+      </div>
+      <span class="sr-only" id="input-hint">Enter 发送，Shift + Enter 换行</span>
     </footer>
+    <dialog id="history-dialog" class="panel-dialog" aria-labelledby="history-heading">
+      <div class="dialog-header"><h2 id="history-heading">历史会话</h2><button id="close-history" class="icon-button" aria-label="关闭历史会话" title="关闭"><span data-icon="close"></span></button></div>
+      <button id="history-new" class="secondary-button history-new"><span data-icon="plus"></span><span>新建对话</span></button>
+      <label class="history-search"><span class="sr-only">搜索会话标题和消息内容</span><input id="history-search" type="search" placeholder="搜索标题或消息内容" autocomplete="off" maxlength="200" /></label>
+      <p id="history-running" class="dialog-hint" hidden>任务结束后可切换或删除会话</p>
+      <div id="history-list" class="history-list"></div>
+      <p id="history-empty" class="dialog-hint">还没有历史会话。</p>
+    </dialog>
+    <dialog id="export-dialog" class="panel-dialog" aria-labelledby="export-heading">
+      <div class="dialog-header"><div><h2 id="export-heading">导出会话</h2><p id="export-description"></p></div><button id="close-export" class="icon-button" aria-label="关闭导出" title="关闭"><span data-icon="close"></span></button></div>
+      <button id="export-markdown" class="export-option"><strong>Markdown <span data-icon="download"></span></strong><small>阅读与分享</small></button>
+      <button id="export-json" class="export-option"><strong>JSON <span data-icon="download"></span></strong><small>完整记录</small></button>
+    </dialog>
+    <dialog id="scope-options" class="panel-dialog" aria-labelledby="scope-heading">
+      <div class="dialog-header"><h2 id="scope-heading">任务范围</h2><button id="close-scope" class="icon-button" aria-label="关闭任务范围" title="关闭"><span data-icon="close"></span></button></div>
+      <label class="scope-option"><input id="scope-current" type="radio" name="scope" value="current" checked /><span><strong>当前页面</strong><small>发送任务时正在浏览的网页</small></span></label>
+      <label class="scope-option"><input id="scope-selected" type="radio" name="scope" value="selected" /><span><strong>指定标签页</strong></span></label>
+      <label id="scope-search-wrap" class="scope-search" hidden><span class="sr-only">搜索标签页或网址</span><input id="scope-search" type="search" placeholder="搜索标签页或网址" autocomplete="off" /></label>
+      <div id="scope-list" class="scope-list" hidden></div>
+      <p id="scope-feedback" class="dialog-hint" role="status"></p>
+      <label class="cleanup-option"><input id="auto-close-pages" type="checkbox" checked disabled /><span>任务完成后关闭临时页</span></label>
+      <button id="scope-apply" class="primary-button scope-apply">应用范围</button>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <div id="reply-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

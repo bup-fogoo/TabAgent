@@ -1,0 +1,4 @@
+.ui-icon { display: inline-block; width: 1.125rem; height: 1.125rem; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: middle; }
+.ui-icon.is-spinning { animation: icon-spin .9s linear infinite; }
+@keyframes icon-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ui-icon.is-spinning { animation: none; } }

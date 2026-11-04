@@ -1,6 +1,7 @@
 node_modules
 .output
 .wxt
+.idea/
 tests/*.png
 *.log
 dist
