@@ -29,27 +29,31 @@
         </fieldset>
         <fieldset class="settings-card connection-card" id="connection-anthropic" data-provider="anthropic" aria-labelledby="anthropic-heading" disabled>
           <h2 id="anthropic-heading" class="sr-only">连接配置</h2>
+          <div class="field-grid service-row">
+            <div class="field"><label for="anthropic-service">服务来源</label><div class="select-field"><select id="anthropic-service" data-service="anthropic"><option value="official">官方</option><option value="aitransx">AITransX</option><option value="custom">自定义</option></select><span data-icon="chevron-down" aria-hidden="true"></span></div></div>
+            <div class="field"><label for="anthropic-url">接口地址 <span class="field-note" id="anthropic-url-note">预设</span></label><input id="anthropic-url" name="anthropicBaseUrl" type="url" placeholder="https://api.anthropic.com" spellcheck="false" autocomplete="off" aria-describedby="anthropic-url-error" /><p class="field-error" id="anthropic-url-error" hidden></p></div>
+          </div>
           <div class="field">
-            <label for="anthropic-key">API Key <span class="field-note">必填</span></label>
+            <label for="anthropic-key">API Key <span class="field-note" id="anthropic-key-note">必填</span></label>
             <div class="secret-input"><input id="anthropic-key" name="anthropicApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" required aria-describedby="anthropic-key-error" /><button type="button" class="reveal-key" aria-controls="anthropic-key" aria-label="显示 Claude API Key" aria-pressed="false" title="显示密钥"><span data-icon="eye" aria-hidden="true"></span></button></div>
             <p class="field-error" id="anthropic-key-error" hidden></p>
           </div>
           <div class="field-grid">
-            <div class="field"><label for="anthropic-model">模型</label><input id="anthropic-model" name="anthropicModel" list="anthropic-models" required spellcheck="false" title="可选择或输入模型名" aria-describedby="anthropic-model-error" /><p class="field-error" id="anthropic-model-error" hidden></p>
-              <datalist id="anthropic-models">
-                <option value="claude-opus-5-5">Claude Opus 5.5</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5</option><option value="claude-haiku-5-5">Claude Haiku 5.5</option><option value="claude-fable-5-1">Claude Fable 5.1</option>
-              </datalist>
+            <div class="field"><label for="anthropic-model">模型</label><div class="model-input"><input id="anthropic-model" name="anthropicModel" required spellcheck="false" title="可选择或输入模型名" aria-describedby="anthropic-model-error" /><button type="button" id="anthropic-pick-model" aria-label="选择 Claude 模型" title="获取模型列表" aria-haspopup="dialog"><span data-icon="chevron-down" aria-hidden="true"></span></button></div><p class="field-error" id="anthropic-model-error" hidden></p>
             </div>
             <div class="field"><label for="effort">思考力度</label><div class="select-field"><select id="effort" name="effort" title="更高力度会增加耗时与用量"><option value="low">低 · 更快</option><option value="medium">中 · 均衡</option><option value="high">高 · 深入</option></select><span data-icon="chevron-down" aria-hidden="true"></span></div></div>
           </div>
-          <div class="field"><label for="anthropic-url">接口地址 <span class="field-note">可选</span></label><input id="anthropic-url" name="anthropicBaseUrl" type="url" placeholder="https://api.anthropic.com" spellcheck="false" autocomplete="off" aria-describedby="anthropic-url-help anthropic-url-error" /><p class="field-hint" id="anthropic-url-help">留空使用官方地址</p><p class="field-error" id="anthropic-url-error" hidden></p></div>
           <div class="field vision-field"><label class="vision-toggle" for="anthropic-vision"><span class="vision-copy"><span>图片识别</span><small id="anthropic-vision-help">按需发送网页截图，需模型支持</small></span><input id="anthropic-vision" name="anthropicVision" type="checkbox" role="switch" aria-describedby="anthropic-vision-help" /></label></div>
         </fieldset>
         <fieldset class="settings-card connection-card" id="connection-openai" data-provider="openai" aria-labelledby="openai-heading" hidden disabled>
           <h2 id="openai-heading" class="sr-only">连接配置</h2>
-          <div class="field"><label for="openai-url">接口地址 <span class="field-note">必填</span></label><input id="openai-url" name="openaiBaseUrl" type="url" required placeholder="https://api.openai.com/v1" spellcheck="false" autocomplete="off" aria-describedby="openai-url-error" /><p class="field-error" id="openai-url-error" hidden></p></div>
-          <div class="field"><label for="openai-key">API Key <span class="field-note">无需鉴权时可留空</span></label><div class="secret-input"><input id="openai-key" name="openaiApiKey" type="password" autocomplete="off" spellcheck="false" /><button type="button" class="reveal-key" aria-controls="openai-key" aria-label="显示 OpenAI 兼容接口 API Key" aria-pressed="false" title="显示密钥"><span data-icon="eye" aria-hidden="true"></span></button></div></div>
-          <div class="field"><label for="openai-model">模型 <span class="field-note">必填</span></label><input id="openai-model" name="openaiModel" required placeholder="如 gpt-4o、deepseek-chat" spellcheck="false" aria-describedby="openai-model-help openai-model-error" /><p class="field-hint" id="openai-model-help">需支持工具调用</p><p class="field-error" id="openai-model-error" hidden></p></div>
+          <div class="field-grid service-row">
+            <div class="field"><label for="openai-service">服务来源</label><div class="select-field"><select id="openai-service" data-service="openai"><option value="official">官方</option><option value="aitransx">AITransX</option><option value="custom">自定义</option></select><span data-icon="chevron-down" aria-hidden="true"></span></div></div>
+            <div class="field"><label for="openai-url">接口地址 <span class="field-note" id="openai-url-note">预设</span></label><input id="openai-url" name="openaiBaseUrl" type="url" required placeholder="https://api.openai.com/v1" spellcheck="false" autocomplete="off" aria-describedby="openai-url-error" /><p class="field-error" id="openai-url-error" hidden></p></div>
+          </div>
+          <div class="field"><label for="openai-key">API Key <span class="field-note" id="openai-key-note">必填</span></label><div class="secret-input"><input id="openai-key" name="openaiApiKey" type="password" autocomplete="off" spellcheck="false" aria-describedby="openai-key-error" /><button type="button" class="reveal-key" aria-controls="openai-key" aria-label="显示 OpenAI 兼容接口 API Key" aria-pressed="false" title="显示密钥"><span data-icon="eye" aria-hidden="true"></span></button></div><p class="field-error" id="openai-key-error" hidden></p></div>
+          <div class="field"><label for="openai-model">模型 <span class="field-note">必填</span></label><div class="model-input"><input id="openai-model" name="openaiModel" required placeholder="如 gpt-4o、deepseek-chat" spellcheck="false" aria-describedby="openai-model-help openai-model-error" /><button type="button" id="openai-pick-model" aria-label="选择模型" title="获取模型与供应商列表" aria-haspopup="dialog"><span data-icon="chevron-down" aria-hidden="true"></span></button></div><p class="field-hint" id="openai-model-help">需支持工具调用</p><p class="field-error" id="openai-model-error" hidden></p>
+          </div>
           <div class="field vision-field"><label class="vision-toggle" for="openai-vision"><span class="vision-copy"><span>图片识别</span><small id="openai-vision-help">按需发送网页截图，需模型支持</small></span><input id="openai-vision" name="openaiVision" type="checkbox" role="switch" aria-describedby="openai-vision-help" /></label></div>
         </fieldset>
         <div class="connection-check">
@@ -63,6 +67,13 @@
         <p class="privacy-note">密钥仅保存在本机</p>
         <footer class="save-bar"><div class="save-feedback"><span id="form-status" role="status" aria-live="polite">读取中…</span><span id="saved" role="status" hidden>已保存</span><span id="form-error" role="alert" hidden></span><button type="button" id="retry-load" hidden>重试</button></div><div class="save-actions"><button id="discard-changes" type="button" disabled title="恢复上次保存的设置"><span data-icon="rotate-ccw" aria-hidden="true"></span><span>撤销更改</span></button><button id="save-button" type="submit" disabled title="保存设置（Ctrl / ⌘ + S）"><span data-icon="save" aria-hidden="true"></span><span id="save-label">保存</span></button></div></footer>
       </form>
+      <dialog id="model-picker" aria-labelledby="model-picker-title">
+        <header class="model-picker-header"><h2 id="model-picker-title">选择模型</h2><button id="model-close" type="button" class="model-icon-button" aria-label="关闭模型选择"><span data-icon="close" aria-hidden="true"></span></button></header>
+        <div class="model-search-row"><input id="model-search" type="search" placeholder="搜索模型或供应商" aria-label="搜索模型或供应商" autocomplete="off" /><div class="select-field"><select id="model-vendor" aria-label="筛选模型来源"><option value="">全部来源</option></select><span data-icon="chevron-down" aria-hidden="true"></span></div><button id="model-refresh" type="button" class="model-icon-button" aria-label="刷新模型列表" title="刷新列表"><span data-icon="rotate-ccw" aria-hidden="true"></span></button></div>
+        <div class="model-list-status"><p id="model-status" role="status" aria-live="polite"></p><span id="model-count"></span></div>
+        <div id="model-list" aria-label="模型列表" aria-busy="false"></div>
+        <footer class="model-picker-footer"><div id="model-supplier-field" class="field"><label for="model-supplier">供应商</label><div class="select-field"><select id="model-supplier"></select><span data-icon="chevron-down" aria-hidden="true"></span></div></div><button id="model-apply" type="button" disabled>使用此模型</button></footer>
+      </dialog>
     </main>
     <script type="module" src="./main.ts"></script>
   </body>

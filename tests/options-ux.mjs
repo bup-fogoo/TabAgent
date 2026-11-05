@@ -54,6 +54,7 @@ try {
   await page.evaluate((settings) => chrome.storage.local.set({ 'tabagent:settings': settings }), baseline);
   await page.reload(); await page.waitForSelector('#form[aria-busy="false"]');
   const stored = () => page.evaluate(async () => (await chrome.storage.local.get('tabagent:settings'))['tabagent:settings']);
+  const flatStored = async () => { const { connections, ...settings } = await stored(); return settings; };
   assert.equal(await page.inputValue('#openai-model'), 'saved-model');
   assert.equal(await page.inputValue('[name="provider"]:checked'), 'openai');
   assert.equal(await page.isDisabled('#save-button'), true);
@@ -114,7 +115,7 @@ try {
   assert.equal(await page.isDisabled('#save-button'), false);
   await page.click('#save-button');
   await page.waitForSelector('#saved:not([hidden])');
-  assert.deepEqual(await stored(), { ...baseline, openaiVision: true });
+  assert.deepEqual(await flatStored(), { ...baseline, openaiVision: true });
   await page.reload(); await page.waitForSelector('#form[aria-busy="false"]');
   assert.equal(await page.isChecked('#openai-vision'), true, 'saved vision choice must survive reload');
   assert.match(await page.getAttribute('#test-connection', 'title'), /不测试图片识别/);
@@ -127,7 +128,7 @@ try {
   await page.click('#save-button');
   await page.waitForSelector('#saved:not([hidden])');
   const visionBaseline = { ...baseline, provider: 'anthropic', anthropicVision: true, openaiVision: true };
-  assert.deepEqual(await stored(), visionBaseline, 'save must persist both booleans, including the hidden provider');
+  assert.deepEqual(await flatStored(), visionBaseline, 'save must persist both booleans, including the hidden provider');
 
   await page.fill('#anthropic-model', 'different-claude');
   assert.equal(await page.isChecked('#anthropic-vision'), false, 'a different model requires vision to be enabled again');
@@ -150,7 +151,7 @@ try {
   assert.equal(await page.isChecked('#openai-vision'), false);
   await page.click('#discard-changes');
   assert.equal(await page.isChecked('#openai-vision'), true);
-  assert.deepEqual(await stored(), visionBaseline);
+  assert.deepEqual(await flatStored(), visionBaseline);
   await page.screenshot({ path: 'tests/options-refreshed.png', fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 320, height: 740 });
   await page.emulateMedia({ colorScheme: 'dark' });

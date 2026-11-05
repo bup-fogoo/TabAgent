@@ -78,7 +78,9 @@ export class AnthropicSession implements ChatSession {
     this.pendingImages = [];
     this.compact();
     const model = this.settings.anthropicModel;
-    const useFallbacks = FALLBACK_MODELS.has(model) && !this.settings.anthropicBaseUrl;
+    const baseUrl = this.settings.anthropicBaseUrl.trim();
+    const official = !baseUrl || new URL(baseUrl).href.replace(/\/+$/, '') === 'https://api.anthropic.com';
+    const useFallbacks = FALLBACK_MODELS.has(model) && official;
     const remaining = new Map(images.map((image) => [image.id, image]));
     const imageBlocks = (evidence: ToolImageEvidence): Array<Anthropic.Beta.BetaTextBlockParam | Anthropic.Beta.BetaImageBlockParam> => [
       { type: 'text', text: imageEvidenceText(evidence) },

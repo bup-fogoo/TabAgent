@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import { PANEL_PORT_NAME, type AgentEvent, type PanelRequest, type TaskMode, type ConversationSummary, type ConversationState, type ApprovalRequest, type SourceReference } from '@/lib/protocol';
 import { renderMarkdown } from '@/lib/markdown';
-import { loadSettings } from '@/lib/settings';
+import { isConnectionConfigured, loadSettings } from '@/lib/settings';
 import { FOLLOW_PAGES_KEY, loadFollowPages, saveFollowPages, AUTO_CLOSE_PAGES_KEY, loadAutoClosePages, saveAutoClosePages } from '@/lib/view-preferences';
 import { DraftStore } from '@/lib/drafts';
 import { isExportEvent, serializeConversation } from '@/lib/export';
@@ -1047,9 +1047,7 @@ async function refreshSettings() {
   try {
     const settings = await loadSettings();
     settingsLoaded = true;
-    configured = settings.provider === 'anthropic'
-      ? Boolean(settings.anthropicApiKey.trim() && settings.anthropicModel.trim())
-      : Boolean(settings.openaiBaseUrl.trim() && settings.openaiModel.trim());
+    configured = isConnectionConfigured(settings);
     const model = settings.provider === 'anthropic' ? settings.anthropicModel : settings.openaiModel;
     document.getElementById('model-name')!.textContent = configured ? model : '连接模型';
     document.getElementById('model-settings')!.title = configured ? `当前模型：${model}，点击调整` : '打开设置，连接模型';

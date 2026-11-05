@@ -1,4 +1,6 @@
 import { defineConfig } from 'wxt';
+import { readdir } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 const icons = { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png', 96: 'icon/96.png', 128: 'icon/128.png' };
 
@@ -12,7 +14,7 @@ export default defineConfig({
       'tabs',
       'scripting',
       'storage',
-      ...(browser === 'firefox' || browser === 'safari' ? [] : ['sidePanel']),
+      ...(browser === 'firefox' || browser === 'safari' ? [] : ['sidePanel', 'offscreen']),
     ],
     host_permissions: ['<all_urls>'],
     action: { default_title: '打开 TabAgent', default_icon: icons },
@@ -30,6 +32,16 @@ export default defineConfig({
       : {}),
   }),
   hooks: {
+    'build:publicAssets': async (wxt, files) => {
+      const base = resolve(wxt.config.root, 'node_modules/pdfjs-dist');
+      files.push({ absoluteSrc: resolve(base, 'legacy/build/pdf.worker.min.mjs'), relativeDest: 'pdfjs/pdf.worker.mjs' });
+      files.push({ absoluteSrc: resolve(base, 'LICENSE'), relativeDest: 'pdfjs/LICENSE' });
+      for (const directory of ['cmaps', 'standard_fonts']) {
+        for (const entry of await readdir(resolve(base, directory), { withFileTypes: true })) {
+          if (entry.isFile()) files.push({ absoluteSrc: resolve(base, directory, entry.name), relativeDest: `pdfjs/${directory}/${entry.name}` });
+        }
+      }
+    },
     'build:manifestGenerated': (wxt, manifest) => {
       const sidebar = (manifest as { sidebar_action?: { default_icon?: string } }).sidebar_action;
       if (sidebar) sidebar.default_icon = icons[32];

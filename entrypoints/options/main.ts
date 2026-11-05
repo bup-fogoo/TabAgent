@@ -1,6 +1,7 @@
-import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from '@/lib/settings';
+import { DEFAULT_SETTINGS, loadSettings, saveSettings, getServiceConnections, applyServiceConnections, requiresConnectionKey, SERVICE_URLS, type Settings, type Provider, type ServiceSource } from '@/lib/settings';
 import { asModelError, testModelConnection } from '@/lib/llm/diagnostics';
 import { createIcon, mountIcons } from '@/lib/icons';
+import { createModelPicker } from './model-picker';
 
 mountIcons();
 
@@ -21,6 +22,26 @@ let saving = false;
 let testAbort: AbortController | null = null;
 let testVersion = 0;
 let testTimer: ReturnType<typeof setInterval> | undefined;
+let connections = getServiceConnections(DEFAULT_SETTINGS);
+const providers: Provider[] = ['anthropic', 'openai'];
+const modelPicker = createModelPicker({
+  connection: (provider) => ({ provider, service: connections[provider].selected,
+    baseUrl: field(`${provider}BaseUrl`).value.trim(), apiKey: field(`${provider}ApiKey`).value.trim() }),
+  currentModel: (provider) => field(`${provider}Model`).value.trim(),
+  select: (provider, model) => {
+    const input = field(`${provider}Model`) as HTMLInputElement;
+    if (input.value !== model) {
+      input.value = model;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    input.focus();
+  },
+});
+for (const provider of providers) {
+  document.getElementById(`${provider}-pick-model`)!.addEventListener('click', () => {
+    if (loaded && !saving) modelPicker.open(provider);
+  });
+}
 
 function syncTestControls() {
   testButton.disabled = !loaded || saving || testAbort !== null;
@@ -67,15 +88,74 @@ function readSettings(): Settings {
     const value = input instanceof HTMLInputElement && input.type === 'checkbox' ? input.checked : input.value.trim();
     (settings as unknown as Record<string, unknown>)[key] = key === 'maxSteps' ? Number(value) : value;
   }
-  return settings;
+  const draft = structuredClone(connections);
+  for (const provider of providers) {
+    draft[provider].profiles[draft[provider].selected] = {
+      apiKey: settings[`${provider}ApiKey`], baseUrl: settings[`${provider}BaseUrl`],
+      model: settings[`${provider}Model`], vision: settings[`${provider}Vision`],
+    };
+  }
+  return applyServiceConnections(settings, draft);
 }
 
 function fillSettings(settings: Settings) {
+  modelPicker.close();
+  connections = getServiceConnections(settings);
   for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
     const input = field(key);
     if (input instanceof HTMLInputElement && input.type === 'checkbox') input.checked = settings[key] === true;
     else input.value = String(settings[key]);
   }
+  providers.forEach(syncServiceFields);
+}
+
+function serviceSelect(provider: Provider) {
+  return document.getElementById(`${provider}-service`) as HTMLSelectElement;
+}
+
+function syncServiceFields(provider: Provider) {
+  const service = connections[provider].selected;
+  const custom = service === 'custom';
+  serviceSelect(provider).value = service;
+  const url = field(`${provider}BaseUrl`) as HTMLInputElement;
+  url.readOnly = !custom;
+  url.required = custom || provider === 'openai';
+  url.placeholder = custom ? 'https://your-api.example.com' : SERVICE_URLS[provider][service];
+  document.getElementById(`${provider}-url-note`)!.textContent = custom ? '必填' : '预设';
+  const key = field(`${provider}ApiKey`) as HTMLInputElement;
+  key.required = requiresConnectionKey(provider, url.value, service);
+  key.placeholder = provider === 'anthropic' && service === 'official' ? 'sk-ant-…' : 'API Key';
+  document.getElementById(`${provider}-key-note`)!.textContent = key.required ? '必填' : '无需鉴权时可留空';
+  if (provider === 'openai') {
+    const model = field('openaiModel') as HTMLInputElement;
+    model.placeholder = service === 'aitransx' ? '如 anthropic/claude-opus-5.5' : '如 gpt-4o、deepseek-chat';
+    document.getElementById('openai-model-help')!.textContent = service === 'aitransx'
+      ? '点击右侧选择模型和供应商，也可手动填写' : '可获取模型列表，也可手动填写；需支持工具调用';
+  }
+}
+
+function switchService(provider: Provider, service: ServiceSource) {
+  if (!loaded || saving || connections[provider].selected === service) return;
+  modelPicker.close();
+  connections = readSettings().connections!;
+  if (provider === 'anthropic' && service === 'aitransx') {
+    // AITransX exposes Claude through Chat Completions, not Anthropic Messages.
+    serviceSelect('anthropic').value = connections.anthropic.selected;
+    field('provider').value = 'openai';
+    provider = 'openai';
+  }
+  connections[provider].selected = service;
+  const profile = connections[provider].profiles[service];
+  (field(`${provider}ApiKey`) as HTMLInputElement).value = profile.apiKey;
+  (field(`${provider}BaseUrl`) as HTMLInputElement).value = profile.baseUrl;
+  (field(`${provider}Model`) as HTMLInputElement).value = profile.model;
+  (field(`${provider}Vision`) as HTMLInputElement).checked = profile.vision;
+  hideKey(field(`${provider}ApiKey`) as HTMLInputElement);
+  form.querySelectorAll<HTMLInputElement>(`fieldset[data-provider="${provider}"] input`).forEach((input) => showFieldError(input, ''));
+  syncServiceFields(provider);
+  showProvider();
+  invalidateTest();
+  updateFeedback();
 }
 
 function resetVisionForConnection(target: EventTarget | null) {
@@ -122,6 +202,7 @@ function validateInput(input: HTMLInputElement): string {
   const value = input.value.trim();
   if (input.required && !value) {
     if (input.name === 'anthropicApiKey') return '请填写 Claude API Key。';
+    if (input.name === 'openaiApiKey') return '请填写当前服务的 API Key。';
     if (input.name === 'maxSteps') return '请填写任务步数。';
     if (input.type === 'url') return '请填写模型服务的接口地址。';
     return '请填写模型名称。';
@@ -194,6 +275,11 @@ async function init() {
 
 form.addEventListener('input', (event) => {
   const target = event.target;
+  if (target instanceof HTMLInputElement && target.name.endsWith('BaseUrl')) {
+    syncServiceFields(target.name.startsWith('anthropic') ? 'anthropic' : 'openai');
+  }
+  if (target instanceof HTMLInputElement && /ApiKey|BaseUrl|^provider$/.test(target.name)) modelPicker.close();
+  if (target instanceof HTMLSelectElement && target.matches('[data-service]')) return;
   resetVisionForConnection(target);
   if (target instanceof HTMLInputElement && target.getAttribute('aria-invalid') === 'true') {
     showFieldError(target, validateInput(target));
@@ -203,7 +289,17 @@ form.addEventListener('input', (event) => {
 });
 
 form.addEventListener('change', (event) => {
+  const target = event.target;
+  if (target instanceof HTMLInputElement && target.name.endsWith('BaseUrl')) {
+    syncServiceFields(target.name.startsWith('anthropic') ? 'anthropic' : 'openai');
+  }
+  if (target instanceof HTMLInputElement && /ApiKey|BaseUrl|^provider$/.test(target.name)) modelPicker.close();
+  if (target instanceof HTMLSelectElement && target.matches('[data-service]')) {
+    switchService(target.dataset.service as Provider, target.value as ServiceSource);
+    return;
+  }
   resetVisionForConnection(event.target);
+  invalidateTest();
   showProvider();
   updateFeedback();
 });
@@ -318,6 +414,7 @@ form.addEventListener('submit', async (event) => {
 document.addEventListener('keydown', (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault();
+    if ((document.getElementById('model-picker') as HTMLDialogElement).open) return;
     if (!saveButton.disabled) form.requestSubmit();
   }
 });

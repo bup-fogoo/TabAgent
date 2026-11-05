@@ -28,21 +28,25 @@
     "test:references": "wxt build && node tests/temporary-tabs-unit.mjs && node tests/references.mjs",
     "test:lifetime": "wxt build && node tests/task-lifetime.mjs && node tests/task-lifetime-browser.mjs",
     "test:storage": "node tests/storage.mjs",
+    "test:services": "node tests/service-settings-unit.mjs && wxt build && node tests/service-presets.mjs && node tests/connection-readiness.mjs",
+    "test:models": "node tests/model-catalog-unit.mjs && wxt build && node tests/model-picker.mjs",
     "test:llm": "node tests/llm.mjs",
     "test:actions": "node tests/actions.mjs",
     "test:panel": "wxt build && node tests/panel-polish.mjs && node tests/panel-behavior.mjs",
     "test:visual": "wxt build && node tests/visual-audit.mjs",
-    "test:pdf": "wxt build && node tests/pdf-capability.mjs",
+    "test:pdf": "node tests/pdf-unit.mjs && wxt build && node tests/pdf-capability.mjs",
     "test:ux": "wxt build && node tests/ux.mjs && node tests/options-ux.mjs",
     "test:vision": "wxt build && node tests/vision-capture.mjs && node tests/vision.mjs",
-    "test": "npm run compile && npm run test:diagnostics && npm run test:storage && npm run test:llm && npm run test:actions && node tests/vision-capture.mjs && node tests/page-readiness-unit.mjs && node tests/task-lifetime.mjs && node tests/follow-scope.mjs && node tests/temporary-tabs-unit.mjs && npm run build && node tests/e2e.mjs && node tests/features.mjs && node tests/search-links.mjs && node tests/search-scope.mjs && node tests/search.mjs && node tests/search-loading.mjs && node tests/follow-pages.mjs && node tests/references.mjs && node tests/task-lifetime-browser.mjs && node tests/panel-polish.mjs && node tests/panel-behavior.mjs && node tests/ux.mjs && node tests/options-ux.mjs && node tests/visual-audit.mjs && node tests/vision.mjs && node tests/pdf-capability.mjs"
+    "test": "npm run compile && npm run test:diagnostics && npm run test:storage && npm run test:llm && npm run test:actions && node tests/vision-capture.mjs && node tests/page-readiness-unit.mjs && node tests/task-lifetime.mjs && node tests/follow-scope.mjs && node tests/temporary-tabs-unit.mjs && node tests/pdf-unit.mjs && node tests/service-settings-unit.mjs && node tests/model-catalog-unit.mjs && npm run build && node tests/e2e.mjs && node tests/features.mjs && node tests/search-links.mjs && node tests/search-scope.mjs && node tests/search.mjs && node tests/search-loading.mjs && node tests/follow-pages.mjs && node tests/references.mjs && node tests/task-lifetime-browser.mjs && node tests/panel-polish.mjs && node tests/panel-behavior.mjs && node tests/ux.mjs && node tests/options-ux.mjs && node tests/service-presets.mjs && node tests/connection-readiness.mjs && node tests/model-picker.mjs && node tests/visual-audit.mjs && node tests/vision.mjs && node tests/pdf-capability.mjs"
   },
   "devDependencies": {
+    "@types/node": "^26.6.6",
     "playwright": "^1.56.1",
     "typescript": "^5.9.3",
     "wxt": "^0.21.4"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.133.0"
+    "@anthropic-ai/sdk": "^0.133.0",
+    "pdfjs-dist": "^6.5.438"
   }
 }

@@ -135,6 +135,15 @@ const paired = (messages, native) => {
 };
 
 try {
+  // The SDK client remains bound to the local server. Change only the session's
+  // endpoint classification to verify new explicit official presets match legacy defaults.
+  for (const [url, official] of [['', true], ['https://api.anthropic.com', true], ['https://API.ANTHROPIC.COM:443/', true], ['https://api.anthropic.com.proxy.invalid', false], ['https://api.anthropic.com/proxy', false]]) {
+    const session = make('anthropic', 'json');
+    session.settings.anthropicModel = 'claude-opus-5-5';
+    session.settings.anthropicBaseUrl = url;
+    await session.step(signal());
+    assert.equal(seen.at(-1).body.fallbacks, official ? 'default' : undefined, 'official presets must preserve the existing fallback behavior');
+  }
   for (const provider of ['openai', 'anthropic']) {
     const streamed = make(provider, 'stream');
     const deltas = [];

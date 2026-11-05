@@ -171,6 +171,7 @@ try {
   await options.goto(`${base}/options.html`);
   await options.waitForSelector('#form[aria-busy="false"]');
   await options.check('input[value=openai]');
+  await options.selectOption('#openai-service', 'custom');
 
   // 无效地址和任务步数必须阻止保存，并明确标出对应字段。
   await options.fill('input[name=openaiBaseUrl]', 'not-a-valid-url');
@@ -199,6 +200,7 @@ try {
   assert.equal(await options.getAttribute('#openai-key', 'type'), 'password');
   await revealOpenAI.click();
   await options.check('input[value=anthropic]');
+  await options.selectOption('#anthropic-service', 'custom');
   await options.fill('input[name=anthropicApiKey]', 'sk-ant-test');
   await options.fill('input[name=anthropicBaseUrl]', `http://localhost:${PORT}`);
   await options.check('input[value=openai]');

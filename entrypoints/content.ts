@@ -585,8 +585,9 @@ function extract(selector: string, attribute?: string, limit = 50) {
 async function handle(req: ContentRequest, signal: AbortSignal, check: () => void): Promise<unknown> {
   const context = { signal, check };
   check();
-  if ((req.action === 'snapshot' || req.action === 'extract') && document.contentType === 'application/pdf') {
-    throw new Error('当前页面是 PDF，暂不支持 PDF 全文读取或表格提取。支持图片的模型开启“图片识别”后可分析当前可见区域，不代表已读完整份 PDF。');
+  if (document.contentType === 'application/pdf') {
+    if (req.action === 'snapshot') return { kind: 'pdf', url: location.href, title: document.title, documentId };
+    if (req.action === 'extract') throw new Error('PDF 不能按网页选择器提取表格，请用 read_page 读取带页码的 PDF 文字后整理。');
   }
   if (MUTATING_ACTIONS.has(req.action) || req.guard) assertGuard(req.guard);
   switch (req.action) {
