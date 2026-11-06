@@ -1,11 +1,13 @@
 import { listModels, isAITransXConnection, type CatalogConnection, type CatalogModel } from '@/lib/model-catalog';
 import { createIcon } from '@/lib/icons';
 import type { Provider } from '@/lib/settings';
+import { loadModelLibrary, setModelFavorite } from '@/lib/model-library';
 
 /** One picker shared by both protocols. Results live only while the dialog is open. */
 export function createModelPicker(options: {
   connection(provider: Provider): CatalogConnection;
   currentModel(provider: Provider): string;
+  scope(provider: Provider): string;
   select(provider: Provider, model: string): void;
 }) {
   const dialog = document.getElementById('model-picker') as HTMLDialogElement;
@@ -18,6 +20,7 @@ export function createModelPicker(options: {
   const apply = document.getElementById('model-apply') as HTMLButtonElement;
   const refresh = document.getElementById('model-refresh') as HTMLButtonElement;
   const count = document.getElementById('model-count')!;
+  const favorite = document.getElementById('model-favorite') as HTMLButtonElement;
   let controller: AbortController | undefined;
   let version = 0;
   let provider: Provider = 'openai';
@@ -27,9 +30,16 @@ export function createModelPicker(options: {
   let selected: CatalogModel | undefined;
   let chosenId = '';
   let currentId = '';
+  let scope = '';
+  let library = { favorites: [] as string[], recent: [] as string[] };
+  let filter: 'all' | 'favorites' | 'recent' = 'all';
+  let favoriteBusy = false;
+  let favoriteOperation = 0;
 
   function resetRequest() {
     version++;
+    favoriteOperation++;
+    favoriteBusy = false;
     controller?.abort();
     controller = undefined;
     models = [];
@@ -37,6 +47,7 @@ export function createModelPicker(options: {
     chosenId = '';
     list.replaceChildren();
     apply.disabled = true;
+    favorite.disabled = true;
     supplier.replaceChildren();
     supplier.disabled = true;
     supplierField.hidden = true;
@@ -55,6 +66,11 @@ export function createModelPicker(options: {
     }
     supplier.disabled = !selected || supplier.options.length < 2;
     apply.disabled = !selected || selected.tools === false;
+    favorite.disabled = !selected || favoriteBusy;
+    const pinned = library.favorites.includes(chosenId);
+    favorite.setAttribute('aria-pressed', String(pinned));
+    favorite.setAttribute('aria-label', pinned ? '取消收藏当前模型' : '收藏当前模型');
+    favorite.title = pinned ? '取消收藏当前模型' : '收藏当前模型';
     for (const button of list.querySelectorAll<HTMLButtonElement>('[data-model-id]')) {
       const active = button.dataset.modelId === selected?.id;
       button.setAttribute('aria-pressed', String(active));
@@ -68,10 +84,17 @@ export function createModelPicker(options: {
   function renderList() {
     list.replaceChildren();
     const term = search.value.trim().toLocaleLowerCase();
-    const filtered = models.filter((model) => (!vendor.value || model.vendor === vendor.value)
+    const entries = filter === 'all' ? models : library[filter].map((id): CatalogModel => {
+      const known = models.find((model) => model.id === id || model.routes?.some((route) => route.modelId === id));
+      return { ...known, id, name: known?.id === id ? known.name : id, routes: undefined };
+    });
+    const filtered = entries.filter((model) => (!vendor.value || model.vendor === vendor.value)
       && [model.id, model.name, model.vendor, ...(model.routes ?? []).map((route) => `${route.name} ${route.modelId}`)].join(' ').toLocaleLowerCase().includes(term));
-    if (selected && !filtered.includes(selected)) { selected = undefined; chosenId = ''; }
-    count.textContent = models.length ? `${filtered.length} / ${models.length} 个模型` : '';
+    if (selected) {
+      selected = filtered.find((model) => model.id === chosenId || model.routes?.some((route) => route.modelId === chosenId));
+      if (!selected) chosenId = '';
+    }
+    count.textContent = entries.length ? `${filtered.length} / ${entries.length} 个模型` : '';
     for (const model of filtered) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -96,8 +119,9 @@ export function createModelPicker(options: {
       });
       list.append(button);
     }
-    if (!filtered.length && models.length) {
-      const empty = document.createElement('p'); empty.className = 'model-empty'; empty.textContent = '没有匹配的模型'; list.append(empty);
+    if (!filtered.length && (entries.length || filter !== 'all')) {
+      const empty = document.createElement('p'); empty.className = 'model-empty';
+      empty.textContent = entries.length ? '没有匹配的模型' : filter === 'favorites' ? '还没有收藏模型，选中模型后点击星标' : '保存或切换模型后会显示在这里'; list.append(empty);
     }
     renderSelection();
   }
@@ -113,14 +137,21 @@ export function createModelPicker(options: {
     status.textContent = '正在获取模型…';
     list.setAttribute('aria-busy', 'true');
     vendor.replaceChildren(new Option('全部来源', ''));
+    void loadModelLibrary(scope).then((stored) => {
+      if (ticket !== version || !dialog.open) return;
+      library = stored;
+      if (filter !== 'all') renderList(); else renderSelection();
+    }).catch(() => { if (ticket === version) status.textContent = '模型记录读取失败，仍可选择在线模型'; });
     try {
       const result = await listModels(connection, abort.signal);
       if (ticket !== version || !dialog.open) return;
       models = result;
       for (const source of [...new Set(models.map((model) => model.vendor).filter((value): value is string => Boolean(value)))].sort()) vendor.add(new Option(source, source));
-      selected = models.find((model) => model.id === pendingId || model.routes?.some((route) => route.modelId === pendingId));
-      chosenId = selected ? pendingId : '';
-      if (selected) models = [selected, ...models.filter((model) => model !== selected)];
+      const preferred = chosenId || pendingId;
+      selected = models.find((model) => model.id === preferred || model.routes?.some((route) => route.modelId === preferred))
+        ?? (filter !== 'all' && library[filter].includes(preferred) ? { id: preferred, name: preferred } : undefined);
+      chosenId = selected ? preferred : '';
+      if (selected && models.includes(selected)) models = [selected, ...models.filter((model) => model !== selected)];
       status.dataset.state = 'ready';
       status.textContent = !models.length ? '没有可列出的聊天模型，可关闭后手动填写。'
         : aitransx ? '公开目录；账号权限与工具调用请用“测试连接”确认。' : '工具调用能力以测试连接结果为准。';
@@ -129,6 +160,7 @@ export function createModelPicker(options: {
       if (ticket !== version || !dialog.open || abort.signal.aborted) return;
       status.dataset.state = 'error';
       status.textContent = error instanceof Error ? error.message : '获取模型失败，请重试或手动填写。';
+      if (filter !== 'all') renderList();
     } finally {
       if (ticket === version) {
         controller = undefined;
@@ -145,7 +177,37 @@ export function createModelPicker(options: {
   refresh.addEventListener('click', () => void fetchModels());
   search.addEventListener('input', renderList);
   vendor.addEventListener('change', renderList);
-  supplier.addEventListener('change', () => { chosenId = supplier.value; });
+  supplier.addEventListener('change', () => { chosenId = supplier.value; renderSelection(); });
+  for (const button of dialog.querySelectorAll<HTMLButtonElement>('[data-model-filter]')) {
+    button.addEventListener('click', () => {
+      filter = button.dataset.modelFilter as typeof filter;
+      for (const tab of dialog.querySelectorAll('[data-model-filter]')) tab.setAttribute('aria-pressed', String(tab === button));
+      vendor.value = ''; search.value = '';
+      renderList();
+    });
+  }
+  favorite.addEventListener('click', async () => {
+    if (!chosenId || favoriteBusy) return;
+    const ticket = version;
+    const model = chosenId;
+    const activeScope = scope;
+    const operation = ++favoriteOperation;
+    favoriteBusy = true; renderSelection();
+    try {
+      await setModelFavorite(activeScope, model, !library.favorites.includes(model));
+      const stored = await loadModelLibrary(activeScope);
+      if (ticket !== version || !dialog.open) return;
+      library = stored;
+      renderList();
+    } catch (error) {
+      if (ticket === version) { status.dataset.state = 'error'; status.textContent = error instanceof Error ? error.message : '收藏保存失败，请重试'; }
+    } finally {
+      if (operation === favoriteOperation) {
+        favoriteBusy = false;
+        if (ticket === version) renderSelection();
+      }
+    }
+  });
   apply.addEventListener('click', () => {
     if (!selected || selected.tools === false || !chosenId) return;
     const model = chosenId;
@@ -185,6 +247,10 @@ export function createModelPicker(options: {
       connection = options.connection(provider);
       aitransx = isAITransXConnection(connection);
       currentId = options.currentModel(provider);
+      scope = options.scope(provider);
+      library = { favorites: [], recent: [] };
+      filter = 'all';
+      for (const tab of dialog.querySelectorAll<HTMLElement>('[data-model-filter]')) tab.setAttribute('aria-pressed', String(tab.dataset.modelFilter === filter));
       search.value = '';
       document.getElementById('model-picker-title')!.textContent = aitransx ? '选择 AITransX 模型' : '选择模型';
       dialog.showModal();

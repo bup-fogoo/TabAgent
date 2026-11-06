@@ -1,7 +1,8 @@
 import { browser } from 'wxt/browser';
 import { PANEL_PORT_NAME, type AgentEvent, type PanelRequest, type TaskMode, type ConversationSummary, type ConversationState, type ApprovalRequest, type SourceReference } from '@/lib/protocol';
 import { renderMarkdown } from '@/lib/markdown';
-import { isConnectionConfigured, loadSettings } from '@/lib/settings';
+import { isConnectionConfigured, loadSettings, saveSettings, getConnectionTargets, getActiveConnectionTarget, activateConnection, type ConnectionTarget } from '@/lib/settings';
+import { MODEL_LIBRARY_PREFIX, getModelScope, loadModelLibrary, setModelFavorite, recordRecentModel } from '@/lib/model-library';
 import { FOLLOW_PAGES_KEY, loadFollowPages, saveFollowPages, AUTO_CLOSE_PAGES_KEY, loadAutoClosePages, saveAutoClosePages } from '@/lib/view-preferences';
 import { DraftStore } from '@/lib/drafts';
 import { isExportEvent, serializeConversation } from '@/lib/export';
@@ -35,6 +36,19 @@ const followPagesButton = document.getElementById('follow-pages') as HTMLButtonE
 const keepPageButton = document.getElementById('keep-page') as HTMLButtonElement;
 const autoClosePagesInput = document.getElementById('auto-close-pages') as HTMLInputElement;
 const scopeSearch = document.getElementById('scope-search') as HTMLInputElement;
+const quickModelDialog = document.getElementById('quick-model-dialog') as HTMLDialogElement;
+const quickModelConnection = document.getElementById('quick-model-connection') as HTMLSelectElement;
+const quickModelSearch = document.getElementById('quick-model-search') as HTMLInputElement;
+const quickModelList = document.getElementById('quick-model-list')!;
+const quickModelStatus = document.getElementById('quick-model-status')!;
+let quickModelTargets: ConnectionTarget[] = [];
+let quickModelItems: Array<{ model: string; favorite: boolean; current: boolean; saved: boolean }> = [];
+let quickModelVersion = 0;
+let quickModelBusy = false;
+let quickModelScope = '';
+let quickModelActiveId = '';
+let quickModelActiveModel = '';
+let quickModelFocus: { id?: string; className?: string; model?: string } | undefined;
 
 const TOOL_LABELS: Record<string, string> = {
   search_web: '搜索网页', open_search_result: '读取搜索结果',
@@ -318,6 +332,7 @@ function syncControls() {
   taskMode.disabled = running || pending || switchingConversation;
   contextPicker.disabled = running || pending || switchingConversation;
   document.getElementById('history-running')!.hidden = !running;
+  document.getElementById('quick-model-running')!.hidden = !(running || pending);
   (document.getElementById('history-new') as HTMLButtonElement).disabled = !connected || switchingConversation;
   historyDialog.querySelectorAll<HTMLButtonElement>('[data-conversation-action]').forEach((button) => { button.disabled = running || pending || switchingConversation || !connected; });
   approveAction.disabled = rejectAction.disabled = !approval || approvalPending || !connected || stopping;
@@ -1043,6 +1058,163 @@ function openOptions() {
   void browser.runtime.openOptionsPage().catch(() => toast('无法打开设置，请从扩展管理页面进入。'));
 }
 
+function targetScope(target: ConnectionTarget) {
+  return getModelScope(target.provider, target.service, target.profile.baseUrl, target.customId);
+}
+
+function renderQuickModels() {
+  const focused = document.activeElement as HTMLElement | null;
+  if (focused === quickModelSearch || focused === quickModelConnection) quickModelFocus = { id: focused.id };
+  else if (focused?.classList.contains('quick-model-use') || focused?.classList.contains('quick-model-favorite')) {
+    quickModelFocus = { className: focused.classList.contains('quick-model-favorite') ? 'quick-model-favorite' : 'quick-model-use', model: focused.dataset.model };
+  }
+  quickModelList.replaceChildren();
+  const targetId = quickModelConnection.value;
+  const scope = quickModelScope;
+  quickModelConnection.disabled = quickModelBusy || !quickModelTargets.length;
+  quickModelSearch.disabled = quickModelBusy;
+  document.getElementById('quick-model-running')!.hidden = !(running || pending);
+  const query = quickModelSearch.value.trim().toLocaleLowerCase();
+  const items = quickModelItems.filter((item) => item.model.toLocaleLowerCase().includes(query));
+  if (!items.length && !quickModelBusy) quickModelList.append(el('p', 'dialog-hint', quickModelTargets.length ? '没有匹配的模型，可在设置中添加或收藏。' : '先在设置中添加模型连接。'));
+  for (const item of items) {
+    const row = el('div', `quick-model-row${item.current ? ' active' : ''}`);
+    const button = el('button', 'quick-model-use');
+    button.type = 'button';
+    button.dataset.model = item.model;
+    button.disabled = quickModelBusy;
+    if (item.current) button.setAttribute('aria-current', 'true');
+    button.append(el('strong', '', item.model), el('small', '', item.current ? '当前模型' : item.favorite ? '收藏' : item.saved ? '此连接模型' : '最近使用'));
+    button.addEventListener('click', () => void chooseQuickModel(targetId, item.model, scope));
+    const favorite = el('button', 'icon-button quick-model-favorite');
+    favorite.type = 'button';
+    favorite.disabled = quickModelBusy;
+    favorite.dataset.model = item.model;
+    favorite.setAttribute('aria-pressed', String(item.favorite));
+    favorite.setAttribute('aria-label', item.favorite ? `取消收藏 ${item.model}` : `收藏 ${item.model}`);
+    favorite.title = item.favorite ? '取消收藏' : '收藏模型';
+    favorite.append(createIcon('star'));
+    favorite.addEventListener('click', () => void toggleQuickFavorite(item.model, !item.favorite, scope));
+    row.append(button, favorite);
+    quickModelList.append(row);
+  }
+  if (!quickModelBusy && quickModelFocus) {
+    // Replacing the list or disabling a busy control must not strand keyboard
+    // focus on the document. Respect a move to another control while loading.
+    if (document.activeElement === document.body || document.activeElement === quickModelDialog) {
+      const remembered = quickModelFocus;
+      const target = remembered.id ? document.getElementById(remembered.id)
+        : [...quickModelList.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.classList.contains(remembered.className!) && button.dataset.model === remembered.model);
+      (target ?? quickModelSearch).focus();
+    }
+    quickModelFocus = undefined;
+  }
+}
+
+async function loadQuickModels() {
+  const target = quickModelTargets.find((item) => item.id === quickModelConnection.value);
+  const version = ++quickModelVersion;
+  quickModelItems = [];
+  quickModelScope = target ? targetScope(target) : '';
+  quickModelBusy = true;
+  quickModelStatus.textContent = target ? '读取模型…' : '';
+  renderQuickModels();
+  try {
+    if (!target) return;
+    const library = await loadModelLibrary(quickModelScope);
+    if (version !== quickModelVersion || !quickModelDialog.open) return;
+    const models = [...new Set([target.profile.model, ...library.favorites, ...library.recent])].filter(Boolean);
+    quickModelItems = models.map((model) => ({ model, favorite: library.favorites.includes(model),
+      current: target.id === quickModelActiveId && model === quickModelActiveModel, saved: model === target.profile.model }));
+    quickModelStatus.textContent = '';
+  } catch {
+    if (version === quickModelVersion) {
+      quickModelStatus.textContent = '收藏与最近记录读取失败，可使用已保存的模型。';
+      if (target?.profile.model) quickModelItems = [{ model: target.profile.model, favorite: false, current: target.id === quickModelActiveId && target.profile.model === quickModelActiveModel, saved: true }];
+    }
+  } finally {
+    if (version === quickModelVersion) { quickModelBusy = false; renderQuickModels(); }
+  }
+}
+
+async function refreshQuickConnections(preferredId = quickModelConnection.value) {
+  const version = ++quickModelVersion;
+  quickModelBusy = true;
+  quickModelStatus.textContent = '读取连接…';
+  renderQuickModels();
+  try {
+    const settings = await loadSettings();
+    if (version !== quickModelVersion || !quickModelDialog.open) return;
+    const active = getActiveConnectionTarget(settings);
+    quickModelActiveId = active.id;
+    quickModelActiveModel = active.profile.model;
+    quickModelTargets = getConnectionTargets(settings).filter((target) => isConnectionConfigured(activateConnection(settings, target.id)));
+    quickModelConnection.replaceChildren(...quickModelTargets.map((target) => new Option(target.name, target.id)));
+    const selected = quickModelTargets.find((target) => target.id === preferredId) ?? quickModelTargets.find((target) => target.id === active.id) ?? quickModelTargets[0];
+    quickModelConnection.value = selected?.id ?? '';
+    await loadQuickModels();
+  } catch {
+    if (version === quickModelVersion) {
+      quickModelBusy = false;
+      quickModelTargets = []; quickModelItems = [];
+      quickModelStatus.textContent = '连接读取失败，请关闭后重试。';
+      renderQuickModels();
+    }
+  }
+}
+
+async function chooseQuickModel(targetId: string, model: string, expectedScope: string) {
+  if (quickModelBusy) return;
+  const version = ++quickModelVersion;
+  quickModelBusy = true;
+  renderQuickModels();
+  let saved = false;
+  try {
+    // Reload at the click boundary: a settings page may have edited a different
+    // connection since this dialog opened. Never save our old settings snapshot.
+    const latest = await loadSettings();
+    if (version !== quickModelVersion || !quickModelDialog.open) return;
+    const target = getConnectionTargets(latest).find((item) => item.id === targetId);
+    if (!target || targetScope(target) !== expectedScope) throw new Error('连接已更改，请重新选择。');
+    const next = activateConnection(latest, targetId, model);
+    if (!isConnectionConfigured(next)) throw new Error('这个连接尚未配置完整，请先打开设置。');
+    await saveSettings(next);
+    saved = true;
+    if (version === quickModelVersion) quickModelDialog.close();
+    await refreshSettings();
+    try { await recordRecentModel(expectedScope, model); }
+    catch { toast('模型已切换，但最近记录未保存。'); return; }
+    toast(running || pending ? '已设置，下次任务使用所选模型。' : '模型已切换');
+  } catch (error) {
+    toast(saved ? '模型已切换，请刷新侧栏查看。' : error instanceof Error ? error.message : '切换失败，请重试。');
+    if (version === quickModelVersion && quickModelDialog.open) await refreshQuickConnections(targetId);
+  } finally { if (version === quickModelVersion) { quickModelBusy = false; if (quickModelDialog.open) renderQuickModels(); } }
+}
+
+async function toggleQuickFavorite(model: string, favorite: boolean, scope: string) {
+  if (quickModelBusy) return;
+  const version = ++quickModelVersion;
+  quickModelBusy = true;
+  renderQuickModels();
+  try {
+    await setModelFavorite(scope, model, favorite);
+    if (version === quickModelVersion) quickModelItems = quickModelItems.map((item) => item.model === model ? { ...item, favorite } : item);
+  } catch { toast('收藏未保存，请重试。'); }
+  finally { if (version === quickModelVersion) { quickModelBusy = false; if (quickModelDialog.open) await refreshQuickConnections(); } }
+}
+
+document.getElementById('model-settings')!.addEventListener('click', () => {
+  if (!quickModelDialog.open) quickModelDialog.showModal();
+  quickModelSearch.value = '';
+  quickModelSearch.focus();
+  void refreshQuickConnections('');
+});
+document.getElementById('quick-model-close')!.addEventListener('click', () => quickModelDialog.close());
+document.getElementById('quick-model-manage')!.addEventListener('click', () => { quickModelDialog.close(); openOptions(); });
+quickModelDialog.addEventListener('close', () => { if (!quickModelDialog.open) { quickModelVersion++; quickModelTargets = []; quickModelItems = []; quickModelBusy = false; quickModelFocus = undefined; } });
+quickModelConnection.addEventListener('change', () => { quickModelSearch.value = ''; void loadQuickModels(); });
+quickModelSearch.addEventListener('input', renderQuickModels);
+
 async function refreshSettings() {
   try {
     const settings = await loadSettings();
@@ -1050,7 +1222,7 @@ async function refreshSettings() {
     configured = isConnectionConfigured(settings);
     const model = settings.provider === 'anthropic' ? settings.anthropicModel : settings.openaiModel;
     document.getElementById('model-name')!.textContent = configured ? model : '连接模型';
-    document.getElementById('model-settings')!.title = configured ? `当前模型：${model}，点击调整` : '打开设置，连接模型';
+    document.getElementById('model-settings')!.title = configured ? `${running || pending ? '下次任务模型' : '当前模型'}：${model}，点击切换` : '选择已保存连接或打开设置';
     document.getElementById('setup-banner')!.hidden = configured;
   } catch {
     settingsLoaded = false;
@@ -1194,7 +1366,7 @@ function decideApproval(approved: boolean) {
 }
 approveAction.addEventListener('click', () => decideApproval(true));
 rejectAction.addEventListener('click', () => decideApproval(false));
-for (const id of ['open-options', 'setup-options', 'model-settings']) document.getElementById(id)!.addEventListener('click', openOptions);
+for (const id of ['open-options', 'setup-options']) document.getElementById(id)!.addEventListener('click', openOptions);
 document.querySelectorAll<HTMLButtonElement>('#examples button').forEach((button) => {
   button.addEventListener('click', () => {
     if (running || pending || switchingConversation) return;
@@ -1210,7 +1382,7 @@ document.querySelectorAll<HTMLButtonElement>('#examples button').forEach((button
 
 // A deliberate backdrop click dismisses a dialog; selecting text or dragging
 // inside it does not. Native Escape also restores focus to the opening control.
-for (const dialog of [historyDialog, scopeDialog, exportDialog]) {
+for (const dialog of [historyDialog, scopeDialog, exportDialog, quickModelDialog]) {
   let backdropPress = false;
   const outside = (event: MouseEvent) => {
     const box = dialog.getBoundingClientRect();
@@ -1231,7 +1403,11 @@ new ResizeObserver(() => {
   else latest.hidden = !empty.hidden || log.scrollHeight - log.scrollTop - log.clientHeight < 56;
 }).observe(log);
 browser.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes['tabagent:settings']) void refreshSettings();
+  if (area === 'local' && changes['tabagent:settings']) {
+    void refreshSettings();
+    if (quickModelDialog.open && !quickModelBusy) void refreshQuickConnections();
+  }
+  if (area === 'local' && Object.keys(changes).some((key) => key.startsWith(MODEL_LIBRARY_PREFIX)) && quickModelDialog.open && !quickModelBusy) void loadQuickModels();
   if (area === 'local' && changes[FOLLOW_PAGES_KEY]) {
     followPagesVersion++;
     followPages = changes[FOLLOW_PAGES_KEY].newValue !== false;

@@ -9,10 +9,21 @@ export interface ConnectionProfile {
   model: string;
   vision: boolean;
 }
+export interface NamedConnectionProfile extends ConnectionProfile { name: string }
 export type ServiceConnections = Record<Provider, {
   selected: ServiceSource;
   profiles: Record<ServiceSource, ConnectionProfile>;
+  customProfiles?: Record<string, NamedConnectionProfile>;
+  selectedCustomId?: string;
 }>;
+export interface ConnectionTarget {
+  id: string;
+  provider: Provider;
+  service: ServiceSource;
+  customId?: string;
+  name: string;
+  profile: ConnectionProfile;
+}
 
 // AITransX exposes OpenAI Chat Completions, not Anthropic Messages.
 export const SERVICE_URLS: Record<Provider, Record<'official' | 'aitransx', string>> = {
@@ -118,12 +129,98 @@ function copyProfile(value: Partial<ConnectionProfile> | undefined, fallback: Co
   };
 }
 
+function profileName(value: unknown, fallback = '自定义连接'): string {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, 60) : fallback;
+}
+
+function customState(entry: ServiceConnections[Provider] | undefined, provider: Provider) {
+  const customProfiles: Record<string, NamedConnectionProfile> = {};
+  const entries = Object.entries(entry?.customProfiles ?? {}).filter(([id, value]) => /^[a-zA-Z0-9_-]{1,80}$/.test(id)
+    && !['__proto__', 'constructor', 'prototype'].includes(id) && value && typeof value === 'object');
+  // Preserve the active connection even if imported data exceeds the UI limit.
+  entries.sort(([a], [b]) => Number(b === entry?.selectedCustomId) - Number(a === entry?.selectedCustomId));
+  for (const [id, profile] of entries.slice(0, 20)) {
+    customProfiles[id] = { ...copyProfile(profile, freshProfile(provider, 'custom')), name: profileName(profile.name) };
+  }
+  let selectedCustomId = entry?.selectedCustomId && Object.hasOwn(customProfiles, entry.selectedCustomId)
+    ? entry.selectedCustomId : Object.keys(customProfiles)[0] ?? 'default';
+  if (!customProfiles[selectedCustomId]) customProfiles[selectedCustomId] = { ...freshProfile(provider, 'custom'), name: '自定义连接' };
+  // The legacy slot is also the current form draft, including while on a preset.
+  if (entry?.profiles?.custom) customProfiles[selectedCustomId] = {
+    ...copyProfile(entry.profiles.custom, customProfiles[selectedCustomId]), name: customProfiles[selectedCustomId].name,
+  };
+  return { customProfiles, selectedCustomId };
+}
+
+function copyConnections(connections: ServiceConnections): ServiceConnections {
+  const result = {} as ServiceConnections;
+  for (const provider of PROVIDERS) {
+    const entry = connections[provider];
+    const custom = customState(entry, provider);
+    const profiles = {} as Record<ServiceSource, ConnectionProfile>;
+    for (const source of SOURCES) profiles[source] = copyProfile(entry.profiles[source], freshProfile(provider, source));
+    profiles.custom = copyProfile(custom.customProfiles[custom.selectedCustomId], freshProfile(provider, 'custom'));
+    result[provider] = { selected: entry.selected, profiles, ...custom };
+  }
+  return result;
+}
+
+function checkedName(name: string): string {
+  const value = name.trim();
+  if (!value || value.length > 60 || /[\u0000-\u001f\u007f]/.test(value)) throw new Error('连接名称需为 1–60 个字符。');
+  return value;
+}
+
+export function selectCustomConnection(connections: ServiceConnections, provider: Provider, id: string): ServiceConnections {
+  const result = copyConnections(connections);
+  const entry = result[provider];
+  if (!Object.hasOwn(entry.customProfiles!, id)) throw new Error('此连接已删除，请重新选择。');
+  entry.selected = 'custom';
+  entry.selectedCustomId = id;
+  entry.profiles.custom = copyProfile(entry.customProfiles![id], freshProfile(provider, 'custom'));
+  return result;
+}
+
+export function createCustomConnection(connections: ServiceConnections, provider: Provider, name: string): ServiceConnections {
+  const result = copyConnections(connections);
+  const entry = result[provider];
+  if (Object.keys(entry.customProfiles!).length >= 20) throw new Error('每种接口最多保存 20 个自定义连接。');
+  const id = crypto.randomUUID();
+  entry.customProfiles![id] = { ...freshProfile(provider, 'custom'), name: checkedName(name) };
+  return selectCustomConnection(result, provider, id);
+}
+
+export function renameCustomConnection(connections: ServiceConnections, provider: Provider, id: string, name: string): ServiceConnections {
+  const result = copyConnections(connections);
+  const profile = Object.hasOwn(result[provider].customProfiles!, id) ? result[provider].customProfiles![id] : undefined;
+  if (!profile) throw new Error('此连接已删除，请重新选择。');
+  profile.name = checkedName(name);
+  return result;
+}
+
+export function removeCustomConnection(connections: ServiceConnections, provider: Provider, id: string): ServiceConnections {
+  const result = copyConnections(connections);
+  const entry = result[provider];
+  if (!Object.hasOwn(entry.customProfiles!, id)) throw new Error('此连接已删除，请重新选择。');
+  delete entry.customProfiles![id];
+  if (!Object.keys(entry.customProfiles!).length) {
+    const replacement = crypto.randomUUID();
+    entry.customProfiles![replacement] = { ...freshProfile(provider, 'custom'), name: '自定义连接' };
+  }
+  if (entry.selectedCustomId === id) {
+    entry.selectedCustomId = Object.keys(entry.customProfiles!)[0]!;
+    entry.profiles.custom = copyProfile(entry.customProfiles![entry.selectedCustomId], freshProfile(provider, 'custom'));
+  }
+  return result;
+}
+
 /** Read-only migration: retain the current URL exactly, including legacy blank
  * Anthropic URLs. A service change never copies another service's credentials. */
 export function getServiceConnections(settings: Settings): ServiceConnections {
   const connections = {} as ServiceConnections;
   for (const provider of PROVIDERS) {
     const existing = settings.connections?.[provider];
+    const custom = customState(existing, provider);
     const profiles = {} as Record<ServiceSource, ConnectionProfile>;
     for (const source of SOURCES) {
       const fallback = freshProfile(provider, source);
@@ -133,6 +230,7 @@ export function getServiceConnections(settings: Settings): ServiceConnections {
       profiles[source] = source === 'custom' || (isServiceSupported(provider, source) && inferSource(provider, profile.baseUrl) === source)
         ? profile : fallback;
     }
+    profiles.custom = copyProfile(custom.customProfiles[custom.selectedCustomId], profiles.custom);
     const current: ConnectionProfile = {
       apiKey: settings[`${provider}ApiKey`], baseUrl: settings[`${provider}BaseUrl`],
       model: settings[`${provider}Model`], vision: settings[`${provider}Vision`] === true,
@@ -142,7 +240,8 @@ export function getServiceConnections(settings: Settings): ServiceConnections {
       && endpoint(profiles[chosen].baseUrl, provider) === endpoint(current.baseUrl, provider)
       ? chosen : inferSource(provider, current.baseUrl);
     profiles[selected] = { ...current };
-    connections[provider] = { selected, profiles };
+    custom.customProfiles[custom.selectedCustomId] = { ...profiles.custom, name: custom.customProfiles[custom.selectedCustomId]!.name };
+    connections[provider] = { selected, profiles, ...custom };
   }
   return connections;
 }
@@ -150,6 +249,7 @@ export function getServiceConnections(settings: Settings): ServiceConnections {
 /** Flatten only the selected service for existing model clients. Clone profiles
  * so draft editing cannot mutate saved settings or the other protocol. */
 export function applyServiceConnections(settings: Settings, connections: ServiceConnections): Settings {
+  connections = copyConnections(connections);
   const result: Settings = { ...settings, connections: {} as ServiceConnections };
   for (const provider of PROVIDERS) {
     const selected = connections[provider].selected;
@@ -162,9 +262,49 @@ export function applyServiceConnections(settings: Settings, connections: Service
     result[`${provider}BaseUrl`] = profile.baseUrl;
     result[`${provider}Model`] = profile.model;
     result[`${provider}Vision`] = profile.vision;
-    result.connections![provider] = { selected, profiles };
+    result.connections![provider] = { ...connections[provider], selected, profiles };
   }
   return result;
+}
+
+export function getConnectionTargets(settings: Settings): ConnectionTarget[] {
+  const connections = getServiceConnections(settings);
+  const targets: ConnectionTarget[] = [];
+  for (const provider of PROVIDERS) {
+    const label = provider === 'anthropic' ? 'Claude' : 'OpenAI';
+    for (const service of ['official', 'aitransx'] as const) {
+      if (!isServiceSupported(provider, service)) continue;
+      targets.push({ id: `${provider}:${service}`, provider, service,
+        name: service === 'official' ? `${label} · 官方` : 'AITransX', profile: { ...connections[provider].profiles[service] } });
+    }
+    for (const [customId, profile] of Object.entries(connections[provider].customProfiles!)) {
+      targets.push({ id: `${provider}:custom:${customId}`, provider, service: 'custom', customId,
+        name: `${label} · ${profile.name}`, profile: copyProfile(profile, freshProfile(provider, 'custom')) });
+    }
+  }
+  return targets;
+}
+
+export function getActiveConnectionTarget(settings: Settings): ConnectionTarget {
+  const entry = getServiceConnections(settings)[settings.provider];
+  const id = `${settings.provider}:${entry.selected}${entry.selected === 'custom' ? `:${entry.selectedCustomId}` : ''}`;
+  return getConnectionTargets(settings).find((target) => target.id === id)!;
+}
+
+export function activateConnection(settings: Settings, targetId: string, model?: string): Settings {
+  const target = getConnectionTargets(settings).find((item) => item.id === targetId);
+  if (!target) throw new Error('此连接已删除，请重新选择。');
+  let connections = getServiceConnections(settings);
+  if (target.service === 'custom') connections = selectCustomConnection(connections, target.provider, target.customId!);
+  else connections[target.provider].selected = target.service;
+  const profile = connections[target.provider].profiles[target.service];
+  if (model !== undefined) {
+    const value = model.trim();
+    if (!value || value.length > 256 || /[\u0000-\u001f\u007f]/.test(value)) throw new Error('模型名称无效，请重新选择。');
+    if (value !== profile.model) profile.vision = false;
+    profile.model = value;
+  }
+  return applyServiceConnections({ ...settings, provider: target.provider }, connections);
 }
 
 export async function loadSettings(): Promise<Settings> {

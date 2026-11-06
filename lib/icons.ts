@@ -7,6 +7,7 @@ const icons = {
   history: paths('M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2'),
   plus: paths('M12 5v14M5 12h14'),
   bookmark: paths('M6 4h12v17l-6-4-6 4V4Z'),
+  star: paths('m12 3 2.8 5.7 6.3.9-4.5 4.4 1.1 6.2L12 17.3l-5.7 2.9 1.1-6.2L3 9.6l6.3-.9L12 3Z'),
   settings: [...paths('M4 7h2m6 0h8M4 17h8m6 0h2'), ['circle', { cx: 9, cy: 7, r: 3 }], ['circle', { cx: 15, cy: 17, r: 3 }]],
   page: [['rect', { x: 3, y: 4, width: 18, height: 16, rx: 3 }], ...paths('M3 9h18M7 6.5h.01M10 6.5h.01')],
   document: paths('M7 3h7l4 4v14H6V3h1m7 0v5h4M9 12h6m-6 4h4'),

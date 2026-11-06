@@ -1,4 +1,5 @@
-import { DEFAULT_SETTINGS, loadSettings, saveSettings, getServiceConnections, applyServiceConnections, requiresConnectionKey, SERVICE_URLS, type Settings, type Provider, type ServiceSource } from '@/lib/settings';
+import { DEFAULT_SETTINGS, loadSettings, saveSettings, getServiceConnections, applyServiceConnections, requiresConnectionKey, selectCustomConnection, createCustomConnection, renameCustomConnection, removeCustomConnection, getActiveConnectionTarget, SERVICE_URLS, type Settings, type Provider, type ServiceSource } from '@/lib/settings';
+import { getModelScope, recordRecentModel } from '@/lib/model-library';
 import { asModelError, testModelConnection } from '@/lib/llm/diagnostics';
 import { createIcon, mountIcons } from '@/lib/icons';
 import { createModelPicker } from './model-picker';
@@ -17,6 +18,8 @@ const cancelTestButton = document.getElementById('cancel-test') as HTMLButtonEle
 const connectionResult = document.getElementById('connection-result')!;
 const testElapsed = document.getElementById('test-elapsed')!;
 let baseline = '';
+let storageBaseline = '';
+let settingsConflict = false;
 let loaded = false;
 let saving = false;
 let testAbort: AbortController | null = null;
@@ -28,6 +31,7 @@ const modelPicker = createModelPicker({
   connection: (provider) => ({ provider, service: connections[provider].selected,
     baseUrl: field(`${provider}BaseUrl`).value.trim(), apiKey: field(`${provider}ApiKey`).value.trim() }),
   currentModel: (provider) => field(`${provider}Model`).value.trim(),
+  scope: (provider) => getModelScope(provider, connections[provider].selected, field(`${provider}BaseUrl`).value.trim(), connections[provider].selected === 'custom' ? connections[provider].selectedCustomId : undefined),
   select: (provider, model) => {
     const input = field(`${provider}Model`) as HTMLInputElement;
     if (input.value !== model) {
@@ -117,6 +121,7 @@ function syncServiceFields(provider: Provider) {
   const service = connections[provider].selected;
   const custom = service === 'custom';
   serviceSelect(provider).value = service;
+  syncCustomFields(provider);
   const url = field(`${provider}BaseUrl`) as HTMLInputElement;
   url.readOnly = !custom;
   url.required = custom || provider === 'openai';
@@ -133,6 +138,74 @@ function syncServiceFields(provider: Provider) {
       ? '点击右侧选择模型和供应商，也可手动填写' : '可获取模型列表，也可手动填写；需支持工具调用';
   }
 }
+
+function syncCustomFields(provider: Provider) {
+  const group = connections[provider];
+  const container = document.getElementById(`${provider}-custom-panel`)!;
+  container.hidden = group.selected !== 'custom';
+  const select = document.getElementById(`${provider}-custom-profile`) as HTMLSelectElement;
+  select.replaceChildren();
+  for (const [id, profile] of Object.entries(group.customProfiles ?? {})) select.add(new Option(profile.name, id));
+  select.value = group.selectedCustomId ?? 'default';
+  (document.getElementById(`${provider}-custom-add`) as HTMLButtonElement).disabled = select.options.length >= 20;
+  const remove = document.getElementById(`${provider}-custom-delete`) as HTMLButtonElement;
+  remove.disabled = select.options.length <= 1;
+  remove.title = remove.disabled ? '至少保留一个自定义连接' : '删除连接';
+}
+
+function showConnectionDraft() {
+  const draft = applyServiceConnections({ ...DEFAULT_SETTINGS, provider: field('provider').value as Provider,
+    effort: field('effort').value as Settings['effort'], maxSteps: Number(field('maxSteps').value) }, connections);
+  fillSettings(draft);
+  form.querySelectorAll<HTMLInputElement>('input[data-revealed]').forEach(hideKey);
+  form.querySelectorAll<HTMLInputElement>('input').forEach((input) => showFieldError(input, ''));
+  showProvider();
+  invalidateTest();
+  updateFeedback();
+}
+
+const connectionEditor = document.getElementById('connection-editor') as HTMLDialogElement;
+const connectionName = document.getElementById('connection-name') as HTMLInputElement;
+const connectionEditorError = document.getElementById('connection-editor-error')!;
+let editingConnection: { provider: Provider; action: 'add' | 'rename' | 'delete'; id: string } | undefined;
+for (const provider of providers) {
+  document.getElementById(`${provider}-custom-profile`)!.addEventListener('change', (event) => {
+    try {
+      connections = selectCustomConnection(readSettings().connections!, provider, (event.target as HTMLSelectElement).value);
+      showConnectionDraft();
+    } catch (cause) { error.textContent = cause instanceof Error ? cause.message : '切换连接失败'; error.hidden = false; }
+  });
+  for (const action of ['add', 'rename', 'delete'] as const) {
+    document.getElementById(`${provider}-custom-${action}`)!.addEventListener('click', () => {
+      const group = readSettings().connections![provider];
+      const id = group.selectedCustomId ?? 'default';
+      editingConnection = { provider, action, id };
+      document.getElementById('connection-editor-title')!.textContent = action === 'add' ? '新建连接' : action === 'rename' ? '重命名连接' : '删除连接';
+      document.getElementById('connection-name-field')!.hidden = action === 'delete';
+      document.getElementById('connection-editor-description')!.textContent = action === 'delete' ? `删除“${group.customProfiles?.[id]?.name ?? '此连接'}”？保存设置后生效。` : '';
+      document.getElementById('connection-editor-confirm')!.textContent = action === 'delete' ? '删除' : '确定';
+      connectionName.value = action === 'add' ? '' : group.customProfiles?.[id]?.name ?? '';
+      connectionEditorError.textContent = '';
+      connectionEditor.showModal();
+      if (action !== 'delete') connectionName.focus();
+    });
+  }
+}
+document.getElementById('connection-editor-cancel')!.addEventListener('click', () => connectionEditor.close());
+document.getElementById('connection-editor-form')!.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!editingConnection) return;
+  const { provider, action, id } = editingConnection;
+  try {
+    const draft = readSettings().connections!;
+    const name = connectionName.value.trim();
+    if (action !== 'delete' && !name) { connectionName.focus(); throw new Error('请填写连接名称'); }
+    connections = action === 'add' ? createCustomConnection(draft, provider, name)
+      : action === 'rename' ? renameCustomConnection(draft, provider, id, name) : removeCustomConnection(draft, provider, id);
+    connectionEditor.close();
+    showConnectionDraft();
+  } catch (cause) { connectionEditorError.textContent = cause instanceof Error ? cause.message : '更新连接失败'; }
+});
 
 function switchService(provider: Provider, service: ServiceSource) {
   if (!loaded || saving || connections[provider].selected === service) return;
@@ -225,8 +298,8 @@ function validateInput(input: HTMLInputElement): string {
 function updateFeedback() {
   if (!loaded || saving) return;
   saved.hidden = true;
-  error.hidden = true;
-  status.hidden = false;
+  error.hidden = !settingsConflict;
+  status.hidden = settingsConflict;
   status.textContent = isDirty() ? '未保存' : '已保存';
   syncTestControls();
 }
@@ -259,6 +332,10 @@ async function init() {
   retryLoad.hidden = true;
   try {
     const settings = await loadSettings();
+    storageBaseline = JSON.stringify(settings);
+    settingsConflict = false;
+    retryLoad.textContent = '重新读取';
+    invalidateTest();
     fillSettings(settings);
     loaded = true;
     baseline = JSON.stringify(readSettings());
@@ -279,7 +356,7 @@ form.addEventListener('input', (event) => {
     syncServiceFields(target.name.startsWith('anthropic') ? 'anthropic' : 'openai');
   }
   if (target instanceof HTMLInputElement && /ApiKey|BaseUrl|^provider$/.test(target.name)) modelPicker.close();
-  if (target instanceof HTMLSelectElement && target.matches('[data-service]')) return;
+  if (target instanceof HTMLSelectElement && target.matches('[data-service], [data-custom-provider]')) return;
   resetVisionForConnection(target);
   if (target instanceof HTMLInputElement && target.getAttribute('aria-invalid') === 'true') {
     showFieldError(target, validateInput(target));
@@ -290,6 +367,7 @@ form.addEventListener('input', (event) => {
 
 form.addEventListener('change', (event) => {
   const target = event.target;
+  if (target instanceof HTMLSelectElement && target.matches('[data-custom-provider]')) return;
   if (target instanceof HTMLInputElement && target.name.endsWith('BaseUrl')) {
     syncServiceFields(target.name.startsWith('anthropic') ? 'anthropic' : 'openai');
   }
@@ -397,7 +475,25 @@ form.addEventListener('submit', async (event) => {
   status.textContent = '保存中…';
   setBusy(true);
   try {
+    const latest = await loadSettings();
+    if (JSON.stringify(latest) !== storageBaseline) {
+      settingsConflict = true;
+      status.hidden = true;
+      error.textContent = '设置已在侧栏或其他窗口更新，当前草稿尚未保存。';
+      error.hidden = false;
+      retryLoad.textContent = '放弃草稿，载入最新';
+      retryLoad.hidden = false;
+      return;
+    }
     await saveSettings(settings);
+    storageBaseline = JSON.stringify(settings);
+    settingsConflict = false;
+    retryLoad.hidden = true;
+    const activeConnection = getActiveConnectionTarget(settings);
+    if (activeConnection.profile.model.trim()) {
+      void recordRecentModel(getModelScope(activeConnection.provider, activeConnection.service, activeConnection.profile.baseUrl, activeConnection.customId), activeConnection.profile.model)
+        .catch(() => { status.textContent = '设置已保存，最近模型记录未能更新'; status.hidden = false; });
+    }
     baseline = JSON.stringify(settings);
     form.querySelectorAll<HTMLInputElement>('input[data-revealed]').forEach(hideKey);
     status.hidden = true;
@@ -414,7 +510,7 @@ form.addEventListener('submit', async (event) => {
 document.addEventListener('keydown', (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault();
-    if ((document.getElementById('model-picker') as HTMLDialogElement).open) return;
+    if ((document.getElementById('model-picker') as HTMLDialogElement).open || connectionEditor.open) return;
     if (!saveButton.disabled) form.requestSubmit();
   }
 });
@@ -429,6 +525,7 @@ window.addEventListener('beforeunload', (event) => {
 retryLoad.addEventListener('click', init);
 discardButton.addEventListener('click', () => {
   if (!loaded || saving || !isDirty()) return;
+  if (settingsConflict) { void init(); return; }
   invalidateTest();
   const previous = JSON.parse(baseline) as Settings;
   fillSettings(previous);

@@ -68,7 +68,7 @@
         <div class="composer-toolbar">
           <div class="composer-options">
             <label class="mode-control"><span class="sr-only">任务模式</span><select id="task-mode" title="只读可搜索网页、读取结果和提取内容；页面操作需确认"><option value="read-only">只读</option><option value="confirm">操作确认</option></select><span data-icon="chevron-down"></span></label>
-            <button id="model-settings" class="model-button" title="打开模型设置"><span data-icon="cpu" class="model-icon"></span><span id="model-name">连接模型</span><span data-icon="chevron-down" class="model-chevron"></span></button>
+            <button id="model-settings" class="model-button" title="切换模型或连接" aria-haspopup="dialog"><span data-icon="cpu" class="model-icon"></span><span id="model-name">连接模型</span><span data-icon="chevron-down" class="model-chevron"></span></button>
           </div>
           <button id="send" disabled aria-label="发送指令" title="发送指令"><span id="send-label" class="sr-only">发送</span><span id="send-icon" data-icon="arrow-up"></span></button>
         </div>
@@ -82,6 +82,16 @@
       <p id="history-running" class="dialog-hint" hidden>任务结束后可切换或删除会话</p>
       <div id="history-list" class="history-list"></div>
       <p id="history-empty" class="dialog-hint">还没有历史会话。</p>
+    </dialog>
+    <dialog id="quick-model-dialog" class="panel-dialog" aria-labelledby="quick-model-heading">
+      <div class="dialog-header"><h2 id="quick-model-heading">切换模型</h2><button id="quick-model-close" class="icon-button" aria-label="关闭模型切换" title="关闭"><span data-icon="close"></span></button></div>
+      <label class="quick-connection-label" for="quick-model-connection">连接</label>
+      <div class="quick-connection-control"><select id="quick-model-connection"></select><span data-icon="chevron-down" aria-hidden="true"></span></div>
+      <label class="history-search quick-model-search"><span class="sr-only">搜索收藏或最近使用的模型</span><input id="quick-model-search" type="search" placeholder="搜索收藏或最近模型" autocomplete="off" maxlength="200" /></label>
+      <p id="quick-model-running" class="dialog-hint" hidden>当前任务保持原模型，切换将在下次任务生效。</p>
+      <p id="quick-model-status" class="dialog-hint" role="status" aria-live="polite"></p>
+      <div id="quick-model-list" aria-label="快捷模型列表"></div>
+      <button id="quick-model-manage" class="secondary-button quick-model-manage"><span data-icon="settings"></span><span>管理连接与更多模型</span></button>
     </dialog>
     <dialog id="export-dialog" class="panel-dialog" aria-labelledby="export-heading">
       <div class="dialog-header"><div><h2 id="export-heading">导出会话</h2><p id="export-description"></p></div><button id="close-export" class="icon-button" aria-label="关闭导出" title="关闭"><span data-icon="close"></span></button></div>
