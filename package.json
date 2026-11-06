@@ -17,6 +17,8 @@
     "zip:firefox": "wxt zip -b firefox",
     "zip:edge": "wxt zip -b edge",
     "zip:all": "wxt zip && wxt zip -b edge && wxt zip -b firefox",
+    "release": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1",
+    "release:pack": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1 -PackageOnly",
     "compile": "tsc --noEmit",
     "icons:generate": "node scripts/generate-icons.mjs",
     "postinstall": "wxt prepare",
@@ -37,7 +39,8 @@
     "test:pdf": "node tests/pdf-unit.mjs && wxt build && node tests/pdf-capability.mjs",
     "test:ux": "wxt build && node tests/ux.mjs && node tests/options-ux.mjs",
     "test:vision": "wxt build && node tests/vision-capture.mjs && node tests/vision.mjs",
-    "test": "npm run compile && npm run test:diagnostics && npm run test:storage && npm run test:llm && npm run test:actions && node tests/vision-capture.mjs && node tests/page-readiness-unit.mjs && node tests/task-lifetime.mjs && node tests/follow-scope.mjs && node tests/temporary-tabs-unit.mjs && node tests/pdf-unit.mjs && node tests/service-settings-unit.mjs && node tests/connection-library-unit.mjs && node tests/model-catalog-unit.mjs && npm run build && node tests/e2e.mjs && node tests/features.mjs && node tests/search-links.mjs && node tests/search-scope.mjs && node tests/search.mjs && node tests/search-loading.mjs && node tests/follow-pages.mjs && node tests/references.mjs && node tests/task-lifetime-browser.mjs && node tests/panel-polish.mjs && node tests/panel-behavior.mjs && node tests/ux.mjs && node tests/options-ux.mjs && node tests/service-presets.mjs && node tests/connection-readiness.mjs && node tests/model-picker.mjs && node tests/connection-library-options.mjs && node tests/model-quick-switch.mjs && node tests/visual-audit.mjs && node tests/vision.mjs && node tests/pdf-capability.mjs"
+    "test:release": "node tests/release.mjs",
+    "test": "npm run compile && npm run test:release && npm run test:diagnostics && npm run test:storage && npm run test:llm && npm run test:actions && node tests/vision-capture.mjs && node tests/page-readiness-unit.mjs && node tests/task-lifetime.mjs && node tests/follow-scope.mjs && node tests/temporary-tabs-unit.mjs && node tests/pdf-unit.mjs && node tests/service-settings-unit.mjs && node tests/connection-library-unit.mjs && node tests/model-catalog-unit.mjs && npm run build && node tests/e2e.mjs && node tests/features.mjs && node tests/search-links.mjs && node tests/search-scope.mjs && node tests/search.mjs && node tests/search-loading.mjs && node tests/follow-pages.mjs && node tests/references.mjs && node tests/task-lifetime-browser.mjs && node tests/panel-polish.mjs && node tests/panel-behavior.mjs && node tests/ux.mjs && node tests/options-ux.mjs && node tests/service-presets.mjs && node tests/connection-readiness.mjs && node tests/model-picker.mjs && node tests/connection-library-options.mjs && node tests/model-quick-switch.mjs && node tests/visual-audit.mjs && node tests/vision.mjs && node tests/pdf-capability.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

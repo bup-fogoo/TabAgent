@@ -111,6 +111,34 @@ npm test              # 类型检查及全部回归（均使用本地模拟模�
 npm run zip:all        # 打包商店用的 zip
 ```
 
+## 一键打包与发布（Windows）
+
+项目根目录提供 `release.cmd`，也可以双击后输入版本号。安装 Node.js 22.18+、Git，并首次运行 `npm ci` 安装依赖；完整检查还需运行一次 `npx playwright install chromium`。发布使用 `origin` 指向的 GitHub 仓库，需已配置 Git 登录和仓库写入权限。脚本不依赖 GitHub CLI 或 Python。
+
+修改代码后先提交，再在项目目录运行：
+
+```powershell
+.\release.cmd 0.1.1                    # 完整检查、打包并发布预览版
+.\release.cmd 0.1.1 -Quick             # 类型及核心单元检查，快速发布预览版
+.\release.cmd -PackageOnly -Quick      # 只在本地打包，不上传
+.\release.cmd 0.1.1 -Check             # 只检查环境、GitHub 访问和版本占用
+.\release.cmd 0.1.1 -Stable            # 发布正式版，并设为 latest
+.\release.cmd 0.1.1 -NotesFile notes.md # 使用指定 Markdown 更新内容
+```
+
+版本号换成下一次要发布的 `X.Y.Z`。脚本同步 `package.json` 和锁文件版本，编译 Chrome、Edge、Firefox 包，逐文件校验 ZIP，生成安装说明和 SHA-256 校验文件；随后自动提交版本变更、创建标签、推送当前分支及标签，上传五个附件，验证成功后公开 Release。默认是预览版；`-Quick` 跳过完整浏览器回归，发布说明会注明。不会改变仓库公开/私有状态，也不会替换已发布的同版本。
+
+发布要求工作区干净，自动提交仅包含版本文件。API 优先使用 `GH_TOKEN` / `GITHUB_TOKEN`，否则读取 Git Credential Manager；Token 需要目标仓库的 **Contents: write** 权限，Git 推送也需可用的认证。网络优先使用 `HTTPS_PROXY` / `HTTP_PROXY`，其次使用 Windows 系统代理。密钥不会写入产物或更新说明。
+
+上传中断后，保留 `.output/releases/版本号`，保持同一提交及版本，运行：
+
+```powershell
+.\release.cmd 0.1.1 -Resume            # 续传已准备好的包，跳过相同附件
+.\release.cmd 0.1.1 -Resume -Stable    # 正式版续传需要保留 -Stable
+```
+
+发布包保存在 `.output/releases/版本号`；仅打包保存在 `.output/packages/版本号`。发布失败会保留草稿和恢复信息，附件齐全后才发布。`Source code` 源码 ZIP 不会作为扩展包上传。也可用 `npm run release -- 0.1.1`、`npm run release:pack -- -Quick` 调用，`npm run test:release` 运行不访问 GitHub 的脚本回归测试。
+
 ## 代码结构
 
 ```
